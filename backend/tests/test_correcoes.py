@@ -29,14 +29,17 @@ def test_bu_relativo_usa_pasta_do_hash_totalizado():
     assert bu_relativo(AUX) == "bbb222/o00406-9625300490001.bu"
 
 
-def test_get_bu_file_monta_url_com_hash(monkeypatch, tmp_path):
+def test_formato_antigo_bu_na_pasta_do_hash(monkeypatch, tmp_path):
     urls = []
     class R:
         content = FIXTURE.read_bytes()
-        def raise_for_status(self): pass
+        def __init__(self, url): self.status_code = 200 if url.endswith(("aux.json", "bbb222/o00406-9625300490001.bu")) else 404
+        def raise_for_status(self):
+            if self.status_code == 404:
+                import requests; raise requests.HTTPError(response=self)
         def json(self): return AUX
     def fake_get(url, timeout=30, headers=None):
-        urls.append(url); return R()
+        urls.append(url); return R(url)
     monkeypatch.setattr(tse_client.requests, 'get', fake_get)
     path, url, _ = tse_client.get_bu_file('go', '96253', '49', '2', dest_folder=tmp_path)
     assert url == ("https://resultados.tse.jus.br/oficial/ele2026/arquivo-urna/3220/dados/go/96253/0049/0002/"
@@ -109,5 +112,31 @@ def test_sem_bu_no_aux_tenta_nome_padrao_e_mostra_arquivos(monkeypatch, tmp_path
     monkeypatch.setattr(tse_client.requests, 'get', fake_get)
     with pytest.raises(RuntimeError) as e:
         tse_client.get_bu_file('go', '96253', '49', '56', dest_folder=tmp_path)
+    assert any(u.endswith("/0056/o03220go9625300490056-bu.dat") for u in urls)
     assert any(u.endswith("/0056/h1/o03220-9625300490056.bu") for u in urls)
     assert "a.logjez, a.rdv" in str(e.value) and "Totalizada" in str(e.value)
+
+
+def test_formato_2026_bu_na_pasta_da_secao(monkeypatch, tmp_path):
+    aux = {"st": "Totalizada", "hashes": [{"hash": "h1", "st": "Totalizado",
+           "nmarq": ["o03220go9625300490002-rdv.dat", "o03220go9625300490002-bu.dat"]}]}
+    class R:
+        def __init__(self, url): self.status_code = 200 if url.endswith(("aux.json", "/0002/o03220go9625300490002-bu.dat")) else 404
+        content = FIXTURE.read_bytes()
+        def raise_for_status(self):
+            if self.status_code == 404:
+                import requests; raise requests.HTTPError(response=self)
+        def json(self): return aux
+    monkeypatch.setattr(tse_client.requests, 'get', lambda url, timeout=30, headers=None: R(url))
+    path, url, _ = tse_client.get_bu_file('go', '96253', '49', '2', dest_folder=tmp_path)
+    assert url.endswith("/0049/0002/o03220go9625300490002-bu.dat")
+
+
+def test_sem_candidato_lista_todos(api):
+    client, _ = api
+    d = client.get("/pesquisa-multiplas", params={"secoes": "0001,0002", "cargo": 6}).json()
+    cands = d["candidatos"]
+    assert cands[0]["numero"] == "1515" and cands[0]["total"] == 96
+    assert cands[0]["por_secao"] == {"0001": 48, "0002": 48}
+    assert d["total"] == sum(c["total"] for c in cands) == 2 * 161
+    assert [c["total"] for c in cands] == sorted((c["total"] for c in cands), reverse=True)

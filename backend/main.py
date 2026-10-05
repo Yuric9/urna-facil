@@ -134,20 +134,28 @@ def votos(uf:str=Query("go"),municipio:str=Query("96253"),zona:str=Query("0049")
     return {"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"secao":str(secao).zfill(4),"cargo":cargo,"votos":rows,"total":total,"cache":from_cache,"fonte":source,"mock":False}
 
 @app.get("/pesquisa-multiplas")
-def pesquisa_multiplas(uf:str="go",municipio:str="96253",zona:str="0049",secoes:str=Query(...,description="001,002,003"),cargo:int=6,candidato:str=Query(...,description="Número do candidato"),force:bool=False):
-    lista=[]
+def pesquisa_multiplas(uf:str="go",municipio:str="96253",zona:str="0049",secoes:str=Query(...,description="001,002,003"),cargo:int=6,candidato:Optional[str]=Query(None,description="Número do candidato; vazio = todos"),force:bool=False):
+    cand=(candidato or "").strip()
+    lista=[]; por_candidato={}
     for s in secoes.split(','):
         s=s.strip()
         if not s: continue
         try:
             rows,from_cache,source=carregar_secao(uf,municipio,zona,s,cargo,force)
         except Exception as e:
-            lista.append({"secao":s,"erro":str(e)}); continue
-        matches=[r for r in rows if r["numero"]==candidato.strip()]
-        votos=matches[0]["votos"] if matches else 0
-        lista.append({"secao":str(s).zfill(4),"votos":votos,"cache":from_cache,"fonte":source})
+            lista.append({"secao":str(s).zfill(4),"erro":str(e)}); continue
+        sec=str(s).zfill(4)
+        for r in rows:
+            c=por_candidato.setdefault(r["numero"],{"numero":r["numero"],"partido":r.get("partido"),"total":0,"por_secao":{}})
+            c["por_secao"][sec]=r["votos"]; c["total"]+=r["votos"]
+        votos=por_candidato.get(cand,{}).get("por_secao",{}).get(sec,0) if cand else sum(r["votos"] for r in rows)
+        lista.append({"secao":sec,"votos":votos,"cache":from_cache,"fonte":source})
     total=sum(x.get("votos",0) for x in lista if "erro" not in x)
-    return {"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"cargo":cargo,"candidato":candidato,"secoes":lista,"total":total,"cache_registros":cache_count(),"mock":False}
+    resp={"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"cargo":cargo,"candidato":cand or None,"secoes":lista,"total":total,"cache_registros":cache_count(),"mock":False}
+    if not cand:
+        # Sem número: devolve o ranking de todos os candidatos nas seções consultadas.
+        resp["candidatos"]=sorted(por_candidato.values(),key=lambda c:(-c["total"],c["numero"]))
+    return resp
 
 @app.get("/cache")
 def cache(): return {"registros":cache_count(),"armazenamento":"SQLite","mock":False}

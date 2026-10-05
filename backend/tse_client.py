@@ -108,28 +108,47 @@ def _hashes_preferidos(aux):
     return [h.get("hash") for h in reversed(totalizados or hashes) if isinstance(h, dict) and h.get("hash")]
 
 
-def caminhos_candidatos(aux, cod_municipio, zona, secao, cod_pleito=COD_PLEITO_2026):
-    """Caminhos possíveis do BU, do mais provável ao menos provável."""
+def _nomes_bu(aux):
+    """Todos os nomes de BU citados no aux.json, preferindo os do hash totalizado."""
+    nomes = []
+    hashes = aux.get("hashes") if isinstance(aux, dict) else None
+    if isinstance(hashes, list):
+        totalizados = [h for h in hashes if isinstance(h, dict) and str(h.get("st", "")).lower().startswith("totalizad")]
+        for h in reversed(totalizados or hashes):
+            if isinstance(h, dict): nomes += [n for n in h.get("nmarq", []) if _eh_bu(n)]
+    nomes += [n for n in _nomes_de_arquivo(aux) if _eh_bu(n)]
+    return list(dict.fromkeys(nomes))
+
+
+def caminhos_candidatos(aux, uf, cod_municipio, zona, secao, cod_pleito=COD_PLEITO_2026):
+    """Caminhos possíveis do BU, do mais provável ao menos provável.
+
+    2026: o arquivo se chama "o03220go9625300490002-bu.dat" e fica na pasta da seção.
+    Anos anteriores: "o00406-9625300490002.bu" dentro de uma subpasta com o hash da urna.
+    Tentamos os dois jeitos, com e sem a subpasta do hash.
+    """
+    m, z, s = str(cod_municipio).zfill(5), str(zona).zfill(4), str(secao).zfill(4)
+    p5 = str(int(cod_pleito)).zfill(5)
+    nomes = _nomes_bu(aux) + [f"o{p5}{uf.lower()}{m}{z}{s}-bu.dat", f"o{p5}-{m}{z}{s}.bu"]
     caminhos = []
-    ref = bu_relativo(aux)
-    if ref: caminhos.append(ref)
-    # Nome padrão do TSE quando o aux.json não lista o arquivo: o{pleito 5 díg.}-{mun}{zona}{seção}.bu
-    padrao = f"o{str(int(cod_pleito)).zfill(5)}-{str(cod_municipio).zfill(5)}{str(zona).zfill(4)}{str(secao).zfill(4)}.bu"
-    caminhos += [f"{h}/{padrao}" for h in _hashes_preferidos(aux)] + [padrao]
+    for nome in dict.fromkeys(nomes):
+        if nome.startswith("http") or "/" in nome: caminhos.append(nome); continue
+        caminhos.append(nome)
+        caminhos += [f"{h}/{nome}" for h in _hashes_preferidos(aux)]
     return list(dict.fromkeys(caminhos))
 
 
 def get_bu_file(uf, cod_municipio, zona, secao, dest_folder="/tmp/urna-facil-bus"):
     aux, aux_url = get_urna_aux(uf, cod_municipio, zona, secao)
     pasta = aux_url.rsplit('/', 1)[0]
-    urls = [c if c.startswith("http") else f"{pasta}/{c}" for c in caminhos_candidatos(aux, cod_municipio, zona, secao)]
+    urls = [c if c.startswith("http") else f"{pasta}/{c}" for c in caminhos_candidatos(aux, uf, cod_municipio, zona, secao)]
     try:
         r, url = _get_primeira(urls, 60)
-    except RuntimeError:
+    except RuntimeError as e:
         status = aux.get("st") if isinstance(aux, dict) else None
         arquivos = ", ".join(_nomes_de_arquivo(aux)) or "nenhum"
         raise RuntimeError(f"BU não encontrado. Situação no TSE: {status or 'não informada'}. "
-                           f"Arquivos listados no aux.json: {arquivos}")
+                           f"Arquivos listados no aux.json: {arquivos}. {e}")
     Path(dest_folder).mkdir(parents=True, exist_ok=True)
     path = Path(dest_folder) / url.rsplit('/', 1)[-1].split('?', 1)[0]
     path.write_bytes(r.content)
