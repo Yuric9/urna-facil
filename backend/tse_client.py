@@ -8,6 +8,10 @@ COD_PLEITO_2026 = "3220"  # confirmado no cabeçalho do BU real de Trindade
 HEADERS = {"User-Agent": "UrnaFacil/2.0"}
 
 
+class SecaoSemBU(RuntimeError):
+    """A seção não tem arquivos próprios no TSE (normalmente porque foi agregada a outra seção)."""
+
+
 def _get(url, timeout=30):
     r = requests.get(url, timeout=timeout, headers=HEADERS)
     r.raise_for_status()
@@ -48,8 +52,13 @@ def get_config_uf(uf="go", cod_pleito=COD_PLEITO_2026):
 def get_urna_aux(uf, cod_municipio, zona, secao, cod_pleito=COD_PLEITO_2026):
     uf = uf.lower(); m = str(cod_municipio).zfill(5); z = str(zona).zfill(4); s = str(secao).zfill(4); p6 = str(cod_pleito).zfill(6)
     # EA18 também usa o CÓDIGO DO PLEITO no nome e no diretório.
-    r, url = _get_primeira([f"{BASE_URL}/{ELEICAO}/arquivo-urna/{pasta}/dados/{uf}/{m}/{z}/{s}/p{p6}-{uf}-m{m}-z{z}-s{s}-aux.json"
-                            for pasta in _pastas_pleito(cod_pleito)])
+    try:
+        r, url = _get_primeira([f"{BASE_URL}/{ELEICAO}/arquivo-urna/{pasta}/dados/{uf}/{m}/{z}/{s}/p{p6}-{uf}-m{m}-z{z}-s{s}-aux.json"
+                                for pasta in _pastas_pleito(cod_pleito)])
+    except RuntimeError:
+        # Seções agregadas não têm urna própria: os votos delas estão no BU da seção principal.
+        raise SecaoSemBU("Seção sem BU próprio no TSE. Provavelmente foi agregada a outra seção, "
+                         "e os votos dela já estão no BU da seção principal.")
     return r.json(), url
 
 

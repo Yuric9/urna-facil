@@ -146,3 +146,29 @@ def test_formato_2026_confirmado_tenta_pasta_do_hash_primeiro():
     aux = {"hashes": [{"hash": "6f78", "st": "Totalizado", "nmarq": ["o03220go9625300490095-bu.dat"]}]}
     caminhos = tse_client.caminhos_candidatos(aux, "go", "96253", "49", "95")
     assert caminhos[0] == "6f78/o03220go9625300490095-bu.dat"
+
+
+def test_secao_agregada_vira_aviso_e_nao_erro(api, monkeypatch):
+    client, _ = api
+    def sem_bu(uf, m, z, s): raise tse_client.SecaoSemBU("agregada")
+    monkeypatch.setattr(main, 'get_bu_file', sem_bu)
+    d = client.get("/pesquisa-multiplas", params={"secoes": "0001,0312", "cargo": 7, "candidato": "77099"}).json()
+    assert d["secoes"][1] == {"secao": "0312", "votos": 0, "aviso": "agregada"}
+    assert d["total"] == 49
+
+
+def test_aux_404_vira_secao_sem_bu(monkeypatch):
+    import requests
+    class R:
+        status_code = 404
+        def raise_for_status(self): raise requests.HTTPError(response=self)
+    monkeypatch.setattr(tse_client.requests, 'get', lambda url, timeout=30, headers=None: R())
+    with pytest.raises(tse_client.SecaoSemBU):
+        tse_client.get_urna_aux('go', '96253', '49', '312')
+
+
+def test_cs_json_identifica_secoes_agregadas():
+    cfg = {"abr": [{"mu": [{"cd": "96253", "zon": [{"cd": "0049", "sec": [
+        {"ns": "0311", "nsp": "0311"}, {"ns": "0312", "nsp": "0311"}]}]}]}]}
+    assert main._extrair_secoes(cfg, "96253", "49") == [311, 312]
+    assert main.secoes_agregadas(cfg, "96253", "49") == {312: 311}

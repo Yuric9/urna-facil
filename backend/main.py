@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from bu_parser import votos_todos_cargos
 from cache import get_section, get_fonte, save_eleicao, cache_count
-from tse_client import get_config_uf, get_urna_aux, get_bu_file
+from tse_client import get_config_uf, get_urna_aux, get_bu_file, SecaoSemBU
 
 app = FastAPI(title="UrnaFácil API - TSE", version="2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -19,24 +19,34 @@ def agora(): return datetime.now(timezone.utc).isoformat()
 
 
 def _secoes_formato_tse(obj, mun_target, zona_target):
-    """Formato do EA16 (cs.json): {"abr":[{"mu":[{"cd":"96253","zon":[{"cd":"0049","sec":[{"ns":"0001"}]}]}]}]}."""
-    encontrados=set()
+    """Formato do EA16 (cs.json): {"abr":[{"mu":[{"cd":"96253","zon":[{"cd":"0049","sec":[{"ns":"0001","nsp":"0001"}]}]}]}]}.
+
+    "nsp" é a seção principal: quando é diferente de "ns", a seção foi agregada a outra
+    e não tem BU próprio. Devolve (todas as seções, {agregada: principal}).
+    """
+    encontrados=set(); agregadas={}
     for abr in obj.get("abr",[]) if isinstance(obj,dict) else []:
         for mu in abr.get("mu",[]):
             if not str(mu.get("cd","")).strip().isdigit() or int(mu["cd"])!=mun_target: continue
             for zon in mu.get("zon",[]):
                 if not str(zon.get("cd","")).strip().isdigit() or int(zon["cd"])!=zona_target: continue
                 for sec in zon.get("sec",[]):
-                    ns=str(sec.get("ns","")).strip()
-                    if ns.isdigit(): encontrados.add(int(ns))
-    return encontrados
+                    ns=str(sec.get("ns","")).strip(); nsp=str(sec.get("nsp","")).strip()
+                    if not ns.isdigit(): continue
+                    encontrados.add(int(ns))
+                    if nsp.isdigit() and int(nsp)!=int(ns): agregadas[int(ns)]=int(nsp)
+    return encontrados, agregadas
+
+
+def secoes_agregadas(cfg, municipio, zona):
+    return _secoes_formato_tse(cfg, int(str(municipio).strip()), int(str(zona).strip()))[1]
 
 
 def _extrair_secoes(obj, municipio, zona):
     """Extrai seções do EA16 do TSE filtrando município/zona, tolerando variações de nomes."""
     mun_target=int(str(municipio).strip())
     zona_target=int(str(zona).strip())
-    encontrados=_secoes_formato_tse(obj, mun_target, zona_target)
+    encontrados,_=_secoes_formato_tse(obj, mun_target, zona_target)
     if encontrados: return sorted(encontrados)
     mun_keys={"municipio","codmunicipio","cdmunicipio","nmunicipio","municipiozona"}
     zona_keys={"zona","nrzona","numerozona","cdzona","z"}
@@ -112,7 +122,8 @@ def secoes_disponiveis(uf:str, municipio:str, zona:str, cargo:int=6):
     try:
         cfg=get_config_uf(uf)
         secoes=_extrair_secoes(cfg, municipio, zona)
-        return {"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"secoes":[str(x).zfill(4) for x in secoes],"quantidade":len(secoes),"fonte":"TSE"}
+        agregadas={str(a).zfill(4):str(p).zfill(4) for a,p in secoes_agregadas(cfg, municipio, zona).items()}
+        return {"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"secoes":[str(x).zfill(4) for x in secoes],"quantidade":len(secoes),"agregadas":agregadas,"fonte":"TSE"}
     except Exception as e:
         raise HTTPException(502,f"Falha ao carregar seções do TSE: {e}")
 
@@ -142,6 +153,8 @@ def pesquisa_multiplas(uf:str="go",municipio:str="96253",zona:str="0049",secoes:
         if not s: continue
         try:
             rows,from_cache,source=carregar_secao(uf,municipio,zona,s,cargo,force)
+        except SecaoSemBU as e:
+            lista.append({"secao":str(s).zfill(4),"votos":0,"aviso":str(e)}); continue
         except Exception as e:
             lista.append({"secao":str(s).zfill(4),"erro":str(e)}); continue
         sec=str(s).zfill(4)
