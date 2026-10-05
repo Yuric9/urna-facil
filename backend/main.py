@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from bu_parser import votos_todos_cargos
 from cache import get_section, get_fonte, save_eleicao, cache_count
 from tse_client import get_config_uf, get_urna_aux, get_bu_file
@@ -10,6 +11,7 @@ from tse_client import get_config_uf, get_urna_aux, get_bu_file
 app = FastAPI(title="UrnaFácil API - TSE", version="2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+FRONTEND = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
 FIXTURE = Path(__file__).resolve().parent / "tests" / "fixtures" / "boletim_trindade_0049_0001.dat"
 
 
@@ -89,8 +91,13 @@ def carregar_secao(uf,municipio,zona,secao,cargo,force=False):
         save_eleicao(id_eleicao,uf,m,z,s,cargos,source,updated)
     return get_section(eleicao,cargo,uf,m,z,s) or [],False,source
 
-@app.get("/")
-def root():
+@app.get("/", include_in_schema=False)
+def pagina():
+    """Serve o frontend, assim o sistema abre só com o endereço http://127.0.0.1:8000."""
+    return FileResponse(FRONTEND)
+
+@app.get("/status")
+def status():
     return {"msg":"UrnaFácil API online","fonte":"TSE","cache":"SQLite","mock":False,"exemplo":"/pesquisa-multiplas?secoes=0001,0002,0003&cargo=6&candidato=13"}
 
 @app.get("/config/{uf}")
