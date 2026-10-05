@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from bu_parser import votos_todos_cargos
 from cache import get_section, get_fonte, save_eleicao, cache_count
+from candidatos import nomes_candidatos
 from tse_client import get_config_uf, get_urna_aux, get_bu_file, SecaoSemBU
 
 app = FastAPI(title="UrnaFácil API - TSE", version="2.0")
@@ -165,10 +166,24 @@ def pesquisa_multiplas(uf:str="go",municipio:str="96253",zona:str="0049",secoes:
         lista.append({"secao":sec,"votos":votos,"cache":from_cache,"fonte":source})
     total=sum(x.get("votos",0) for x in lista if "erro" not in x)
     resp={"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"cargo":cargo,"candidato":cand or None,"secoes":lista,"total":total,"cache_registros":cache_count(),"mock":False}
-    if not cand:
+    # Nomes vêm de outro arquivo do TSE; se ele falhar, a pesquisa segue só com os números.
+    try: nomes,_=nomes_candidatos(uf,municipio,cargo)
+    except Exception as e: nomes={}; resp["aviso_nomes"]=str(e)
+    if cand:
+        resp["nome"]=nomes.get(cand,{}).get("nome"); resp["sigla"]=nomes.get(cand,{}).get("partido")
+    else:
         # Sem número: devolve o ranking de todos os candidatos nas seções consultadas.
+        for c in por_candidato.values():
+            c["nome"]=nomes.get(c["numero"],{}).get("nome"); c["sigla"]=nomes.get(c["numero"],{}).get("partido")
         resp["candidatos"]=sorted(por_candidato.values(),key=lambda c:(-c["total"],c["numero"]))
     return resp
+
+@app.get("/candidatos/{uf}/{municipio}")
+def lista_candidatos(uf:str, municipio:str, cargo:int=6, force:bool=False):
+    """Lista de candidatos com nome (útil para conferir de onde os nomes vieram)."""
+    try: nomes,fonte=nomes_candidatos(uf,municipio,cargo,force)
+    except Exception as e: raise HTTPException(502,str(e))
+    return {"uf":uf.upper(),"municipio":str(municipio).zfill(5),"cargo":cargo,"quantidade":len(nomes),"fonte":fonte or "cache","candidatos":nomes}
 
 @app.get("/cache")
 def cache(): return {"registros":cache_count(),"armazenamento":"SQLite","mock":False}

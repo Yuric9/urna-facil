@@ -63,6 +63,8 @@ def api(monkeypatch, tmp_path):
     def fake_bu(uf, m, z, s):
         downloads.append(s); return FIXTURE, "TSE (teste)", {}
     monkeypatch.setattr(main, 'get_bu_file', fake_bu)
+    nomes = {"1515": {"nome": "FULANO", "partido": "MDB"}}
+    monkeypatch.setattr(main, 'nomes_candidatos', lambda uf, m, cargo, force=False: (nomes, "teste"))
     return TestClient(main.app), downloads
 
 
@@ -172,3 +174,49 @@ def test_cs_json_identifica_secoes_agregadas():
         {"ns": "0311", "nsp": "0311"}, {"ns": "0312", "nsp": "0311"}]}]}]}]}
     assert main._extrair_secoes(cfg, "96253", "49") == [311, 312]
     assert main.secoes_agregadas(cfg, "96253", "49") == {312: 311}
+
+
+
+def test_nomes_aparecem_no_ranking_e_na_busca(api):
+    client, _ = api
+    d = client.get("/pesquisa-multiplas", params={"secoes": "0001", "cargo": 6}).json()
+    assert d["candidatos"][0]["nome"] == "FULANO" and d["candidatos"][0]["sigla"] == "MDB"
+    assert d["candidatos"][1]["nome"] is None  # sem nome na lista: fica só o número
+    d = client.get("/pesquisa-multiplas", params={"secoes": "0001", "cargo": 6, "candidato": "1515"}).json()
+    assert d["nome"] == "FULANO"
+
+
+def test_pesquisa_continua_sem_nomes(api, monkeypatch):
+    client, _ = api
+    def falha(*a, **k): raise RuntimeError("TSE fora")
+    monkeypatch.setattr(main, 'nomes_candidatos', falha)
+    d = client.get("/pesquisa-multiplas", params={"secoes": "0001", "cargo": 6}).json()
+    assert d["total"] == 161 and d["aviso_nomes"] == "TSE fora"
+
+
+def test_extrair_candidatos_formato_tse():
+    import candidatos
+    dados = {"carg": [{"cd": "7", "agr": [{"par": [
+        {"sg": "SOLIDARIEDADE", "cand": [{"n": "77099", "nm": "CRISTIANO DA SILVA GALINDO", "nmu": "CRISTIANO GALINDO", "vap": "17853"}]},
+        {"sg": "PSD", "cand": [{"n": "55777", "nm": "EDSON", "nmu": "CORONEL EDSON RAIADO"}]}]}]}],
+        "abr": [{"cd": "96253", "nm": "TRINDADE"}]}
+    assert candidatos.extrair_candidatos(dados) == {
+        "77099": {"nome": "CRISTIANO GALINDO", "partido": "SOLIDARIEDADE"},
+        "55777": {"nome": "CORONEL EDSON RAIADO", "partido": "PSD"}}
+
+
+def test_nomes_baixa_uma_vez_e_usa_cache(monkeypatch, tmp_path):
+    import candidatos
+    monkeypatch.setattr(cache, 'DB_PATH', tmp_path / 'c.sqlite3')
+    chamadas = []
+    class R:
+        def __init__(self, url): self.url = url; self.status_code = 200 if url.endswith("go96253-c0007-e006259-u.json") else 404
+        def raise_for_status(self):
+            if self.status_code == 404:
+                import requests; raise requests.HTTPError(response=self)
+        def json(self): return {"cand": [{"n": "77099", "nmu": "CRISTIANO GALINDO"}]}
+    monkeypatch.setattr(tse_client.requests, 'get', lambda url, timeout=30, headers=None: (chamadas.append(url), R(url))[1])
+    nomes, fonte = candidatos.nomes_candidatos("go", "96253", 7)
+    assert nomes["77099"]["nome"] == "CRISTIANO GALINDO" and fonte.endswith("e006259-u.json")
+    n = len(chamadas)
+    assert candidatos.nomes_candidatos("go", "96253", 7)[0] == nomes and len(chamadas) == n

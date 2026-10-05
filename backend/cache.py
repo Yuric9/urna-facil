@@ -23,6 +23,11 @@ def _conn():
         atualizado_em TEXT NOT NULL,
         PRIMARY KEY (eleicao,uf,municipio,zona,secao)
     )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS candidatos (
+        uf TEXT NOT NULL, municipio TEXT NOT NULL, cargo INTEGER NOT NULL,
+        numero TEXT NOT NULL, nome TEXT NOT NULL, partido TEXT, fonte TEXT NOT NULL,
+        PRIMARY KEY (uf,municipio,cargo,numero)
+    )""")
     c.commit()
     return c
 
@@ -60,3 +65,17 @@ def save_eleicao(eleicao, uf, municipio, zona, secao, votos_por_cargo, fonte, up
 def cache_count():
     with closing(_conn()) as c:
         return c.execute("SELECT COUNT(*) n FROM votos_secao").fetchone()[0]
+
+
+def get_candidatos(uf, municipio, cargo):
+    with closing(_conn()) as c:
+        rows = c.execute("SELECT numero,nome,partido FROM candidatos WHERE uf=? AND municipio=? AND cargo=?", (uf, municipio, cargo)).fetchall()
+        return {r["numero"]: {"nome": r["nome"], "partido": r["partido"]} for r in rows}
+
+
+def save_candidatos(uf, municipio, cargo, candidatos, fonte):
+    with closing(_conn()) as c:
+        c.execute("DELETE FROM candidatos WHERE uf=? AND municipio=? AND cargo=?", (uf, municipio, cargo))
+        c.executemany("INSERT INTO candidatos VALUES (?,?,?,?,?,?,?)",
+                      [(uf, municipio, cargo, n, d["nome"], d.get("partido"), fonte) for n, d in candidatos.items()])
+        c.commit()
