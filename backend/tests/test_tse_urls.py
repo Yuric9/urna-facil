@@ -11,5 +11,5 @@ def test_ea16_url_usa_pleito_2026(monkeypatch):
         captured['url'] = url
         return R()
     monkeypatch.setattr(tse_client.requests, 'get', fake_get)
-    get_config_uf('go', '6259')
+    get_config_uf('go')
     assert captured['url'].endswith('/oficial/ele2026/arquivo-urna/003220/config/go/go-p003220-cs.json')

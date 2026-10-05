@@ -11,5 +11,14 @@ def votos_por_candidato(filepath, cargo=6, eleicao=6259):
     return extract_candidate_votes(bu, election_id=eleicao, cargo_code=cargo)
 
 
-def votos_por_candidato_mock(*args, **kwargs):
-    raise RuntimeError("Dados fictícios foram removidos do UrnaFácil. Use votos_por_candidato().")
+def votos_todos_cargos(filepath):
+    """Decodifica o BU uma vez e devolve {idEleicao: {cargo: [votos...]}} com todos os cargos."""
+    _, bu = decode_bu_file(filepath)
+    out = {}
+    for e in bu['resultadosVotacaoPorEleicao']:
+        cargos = out.setdefault(e['idEleicao'], {})
+        for rv in e['resultadosVotacao']:
+            for c in rv['totaisVotosCargo']:
+                cod = c['codigoCargo']['valor']
+                cargos[cod] = extract_candidate_votes(bu, election_id=e['idEleicao'], cargo_code=cod)
+    return out

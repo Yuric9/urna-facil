@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from bu_parser import votos_por_candidato
-from cache import get_section, save_section, cache_count
+from bu_parser import votos_todos_cargos
+from cache import get_section, get_fonte, save_eleicao, cache_count
 from tse_client import get_config_uf, get_urna_aux, get_bu_file
 
 app = FastAPI(title="UrnaFácil API - TSE", version="2.0")
@@ -16,11 +16,26 @@ FIXTURE = Path(__file__).resolve().parent / "tests" / "fixtures" / "boletim_trin
 def agora(): return datetime.now(timezone.utc).isoformat()
 
 
+def _secoes_formato_tse(obj, mun_target, zona_target):
+    """Formato do EA16 (cs.json): {"abr":[{"mu":[{"cd":"96253","zon":[{"cd":"0049","sec":[{"ns":"0001"}]}]}]}]}."""
+    encontrados=set()
+    for abr in obj.get("abr",[]) if isinstance(obj,dict) else []:
+        for mu in abr.get("mu",[]):
+            if not str(mu.get("cd","")).strip().isdigit() or int(mu["cd"])!=mun_target: continue
+            for zon in mu.get("zon",[]):
+                if not str(zon.get("cd","")).strip().isdigit() or int(zon["cd"])!=zona_target: continue
+                for sec in zon.get("sec",[]):
+                    ns=str(sec.get("ns","")).strip()
+                    if ns.isdigit(): encontrados.add(int(ns))
+    return encontrados
+
+
 def _extrair_secoes(obj, municipio, zona):
     """Extrai seções do EA16 do TSE filtrando município/zona, tolerando variações de nomes."""
-    encontrados=set()
     mun_target=int(str(municipio).strip())
     zona_target=int(str(zona).strip())
+    encontrados=_secoes_formato_tse(obj, mun_target, zona_target)
+    if encontrados: return sorted(encontrados)
     mun_keys={"municipio","codmunicipio","cdmunicipio","nmunicipio","municipiozona"}
     zona_keys={"zona","nrzona","numerozona","cdzona","z"}
     sec_keys={"secao","nrsecao","numerosecao","numerosecaoeleitoral","cdsecao","s"}
@@ -59,18 +74,20 @@ def _cargo_eleicao(cargo:int):
 
 def carregar_secao(uf,municipio,zona,secao,cargo,force=False):
     eleicao=_cargo_eleicao(cargo)
+    uf=uf.lower(); m=str(municipio).zfill(5); z=str(zona).zfill(4); s=str(secao).zfill(4)
     if not force:
-        cached=get_section(eleicao,cargo,uf,municipio,zona,secao)
-        if cached: return cached, True, "cache"
+        cached=get_section(eleicao,cargo,uf,m,z,s)
+        if cached is not None: return cached, True, get_fonte(eleicao,uf,m,z,s)
     # Fixture real usada apenas como teste automatizado para a seção 0049/0001.
-    if uf.lower()=="go" and str(municipio).zfill(5)=="96253" and str(zona).zfill(4)=="0049" and str(secao).zfill(4)=="0001" and FIXTURE.exists():
+    if uf=="go" and m=="96253" and z=="0049" and s=="0001" and FIXTURE.exists():
         path=FIXTURE; source="fixture BU real fornecida para validação"
     else:
-        path,source,_aux=get_bu_file(uf,municipio,zona,secao,eleicao)
-    votos=votos_por_candidato(path,cargo=cargo,eleicao=eleicao)
+        path,source,_aux=get_bu_file(uf,m,z,s)
+    # O BU traz todos os cargos das duas eleições: salva tudo para não baixar de novo ao trocar de cargo.
     updated=agora()
-    save_section(eleicao,cargo,uf.lower(),str(municipio).zfill(5),str(zona).zfill(4),str(secao).zfill(4),votos,source,updated)
-    return get_section(eleicao,cargo,uf.lower(),str(municipio).zfill(5),str(zona).zfill(4),str(secao).zfill(4)),False,source
+    for id_eleicao,cargos in votos_todos_cargos(path).items():
+        save_eleicao(id_eleicao,uf,m,z,s,cargos,source,updated)
+    return get_section(eleicao,cargo,uf,m,z,s) or [],False,source
 
 @app.get("/")
 def root():
@@ -86,7 +103,7 @@ def secoes_disponiveis(uf:str, municipio:str, zona:str, cargo:int=6):
     """Lista as seções disponíveis no arquivo oficial de configuração do TSE."""
     eleicao=_cargo_eleicao(cargo)
     try:
-        cfg=get_config_uf(uf, eleicao)
+        cfg=get_config_uf(uf)
         secoes=_extrair_secoes(cfg, municipio, zona)
         return {"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"secoes":[str(x).zfill(4) for x in secoes],"quantidade":len(secoes),"fonte":"TSE"}
     except Exception as e:
