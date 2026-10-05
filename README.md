@@ -2,6 +2,13 @@
 
 O projeto consulta dados oficiais disponibilizados pelo TSE e armazena no SQLite os votos já processados por seção. A pesquisa por várias seções soma apenas os dados encontrados para cada seção.
 
+## Como abrir (Windows)
+Dê **dois cliques** em `Iniciar UrnaFacil.bat`. O navegador abre sozinho em http://127.0.0.1:8000.
+
+- Na primeira vez ele instala as dependências (precisa de internet e do Python instalado; se não houver Python, o próprio arquivo abre a página de download).
+- Para encerrar, feche a janela preta do UrnaFácil.
+- Dica: clique com o botão direito no `.bat` → *Enviar para* → *Área de trabalho (criar atalho)*.
+
 ## Fluxo
 1. Primeira consulta: obtém o BU oficial da seção no TSE e decodifica o formato ASN.1/BER v2.
 2. Salva os votos por candidato no cache SQLite.
@@ -14,7 +21,7 @@ O projeto consulta dados oficiais disponibilizados pelo TSE e armazena no SQLite
 **Não há mais votos mockados.** Se o TSE não fornecer o BU, a API retorna erro; ela não inventa valores.
 
 ## Teste
-`pytest -q`
+`pip install -r backend/requirements-dev.txt` e depois `pytest -q` dentro de `backend/`
 
 A fixture `backend/tests/fixtures/boletim_trindade_0049_0001.dat` é o BU real fornecido para validar o parser.
 
