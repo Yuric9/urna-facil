@@ -3,7 +3,7 @@ from pathlib import Path
 
 BASE_URL = "https://resultados.tse.jus.br/oficial"
 ELEICAO = "ele2026"
-COD_PLEITO_2026 = "003220"
+COD_PLEITO_2026 = "3220"  # confirmado no cabeçalho do BU real de Trindade
 HEADERS = {"User-Agent": "UrnaFacil/2.0"}
 
 
@@ -13,17 +13,43 @@ def _get(url, timeout=30):
     return r
 
 
+def _pastas_pleito(cod_pleito):
+    """Nome da pasta do pleito no site do TSE.
+
+    O nome do ARQUIVO sempre usa 6 dígitos (p003220), mas a PASTA usa o número
+    sem zeros à esquerda (.../arquivo-urna/3220/...), como em 2022 (406) e 2024.
+    A versão com zeros fica como reserva caso o TSE mude o padrão.
+    """
+    sem_zeros = str(int(cod_pleito))
+    return [sem_zeros, str(cod_pleito).zfill(6)] if sem_zeros != str(cod_pleito).zfill(6) else [sem_zeros]
+
+
+def _get_primeira(caminhos, timeout=30):
+    """Tenta cada URL até uma responder; devolve (resposta, url)."""
+    erros = []
+    for url in caminhos:
+        try:
+            return _get(url, timeout), url
+        except requests.HTTPError as e:
+            if e.response is None or e.response.status_code != 404: raise
+            erros.append(url)
+    raise RuntimeError("O TSE respondeu 404 (não encontrado) para: " + " | ".join(erros))
+
+
 def get_config_uf(uf="go", cod_pleito=COD_PLEITO_2026):
     # EA16 usa o CÓDIGO DO PLEITO (3220), não o código da eleição (6257/6259).
-    url = f"{BASE_URL}/{ELEICAO}/arquivo-urna/{cod_pleito}/config/{uf.lower()}/{uf.lower()}-p{cod_pleito}-cs.json"
-    return _get(url).json()
+    uf = uf.lower(); p6 = str(cod_pleito).zfill(6)
+    r, _ = _get_primeira([f"{BASE_URL}/{ELEICAO}/arquivo-urna/{pasta}/config/{uf}/{uf}-p{p6}-cs.json"
+                          for pasta in _pastas_pleito(cod_pleito)])
+    return r.json()
 
 
 def get_urna_aux(uf, cod_municipio, zona, secao, cod_pleito=COD_PLEITO_2026):
-    uf = uf.lower(); m = str(cod_municipio).zfill(5); z = str(zona).zfill(4); s = str(secao).zfill(4)
+    uf = uf.lower(); m = str(cod_municipio).zfill(5); z = str(zona).zfill(4); s = str(secao).zfill(4); p6 = str(cod_pleito).zfill(6)
     # EA18 também usa o CÓDIGO DO PLEITO no nome e no diretório.
-    url = f"{BASE_URL}/{ELEICAO}/arquivo-urna/{cod_pleito}/dados/{uf}/{m}/{z}/{s}/p{cod_pleito}-{uf}-m{m}-z{z}-s{s}-aux.json"
-    return _get(url).json(), url
+    r, url = _get_primeira([f"{BASE_URL}/{ELEICAO}/arquivo-urna/{pasta}/dados/{uf}/{m}/{z}/{s}/p{p6}-{uf}-m{m}-z{z}-s{s}-aux.json"
+                            for pasta in _pastas_pleito(cod_pleito)])
+    return r.json(), url
 
 
 def _eh_bu(nome):

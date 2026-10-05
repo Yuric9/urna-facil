@@ -39,7 +39,7 @@ def test_get_bu_file_monta_url_com_hash(monkeypatch, tmp_path):
         urls.append(url); return R()
     monkeypatch.setattr(tse_client.requests, 'get', fake_get)
     path, url, _ = tse_client.get_bu_file('go', '96253', '49', '2', dest_folder=tmp_path)
-    assert url == ("https://resultados.tse.jus.br/oficial/ele2026/arquivo-urna/003220/dados/go/96253/0049/0002/"
+    assert url == ("https://resultados.tse.jus.br/oficial/ele2026/arquivo-urna/3220/dados/go/96253/0049/0002/"
                    "bbb222/o00406-9625300490001.bu")
     assert path.read_bytes() == FIXTURE.read_bytes()
 
