@@ -84,3 +84,30 @@ def test_secao_sem_votos_no_candidato_fica_em_cache(api):
     client.get("/votos", params={"secao": "0007", "cargo": 6, "candidato": "9999"})
     d = client.get("/votos", params={"secao": "0007", "cargo": 6, "candidato": "9999"}).json()
     assert d["cache"] is True and d["total"] == 0 and downloads == ["0007"]
+
+
+def test_reconhece_variacoes_de_nome_do_bu():
+    assert tse_client._eh_bu("o03220-9625300490001.bu")
+    assert tse_client._eh_bu("o03220-9625300490001-bu.dat")
+    assert tse_client._eh_bu("x.bu.zip")
+    assert not tse_client._eh_bu("o03220-9625300490001.imgbu")
+    assert not tse_client._eh_bu("o03220-9625300490001.rdv")
+
+
+def test_sem_bu_no_aux_tenta_nome_padrao_e_mostra_arquivos(monkeypatch, tmp_path):
+    aux = {"st": "Totalizada", "hashes": [{"hash": "h1", "st": "Totalizado", "nmarq": ["a.logjez", "a.rdv"]}]}
+    urls = []
+    class R:
+        def __init__(self, url): self.url = url; self.status_code = 200 if url.endswith("aux.json") else 404
+        content = b""
+        def raise_for_status(self):
+            if self.status_code == 404:
+                import requests; raise requests.HTTPError(response=self)
+        def json(self): return aux
+    def fake_get(url, timeout=30, headers=None):
+        urls.append(url); return R(url)
+    monkeypatch.setattr(tse_client.requests, 'get', fake_get)
+    with pytest.raises(RuntimeError) as e:
+        tse_client.get_bu_file('go', '96253', '49', '56', dest_folder=tmp_path)
+    assert any(u.endswith("/0056/h1/o03220-9625300490056.bu") for u in urls)
+    assert "a.logjez, a.rdv" in str(e.value) and "Totalizada" in str(e.value)

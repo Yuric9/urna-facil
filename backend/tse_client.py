@@ -1,3 +1,4 @@
+import re
 import requests
 from pathlib import Path
 
@@ -53,7 +54,19 @@ def get_urna_aux(uf, cod_municipio, zona, secao, cod_pleito=COD_PLEITO_2026):
 
 
 def _eh_bu(nome):
-    return isinstance(nome, str) and nome.lower().split("?", 1)[0].endswith((".bu", ".busa"))
+    """Reconhece arquivos de BU: "x.bu", "x.busa", "x-bu.dat", "x.bu.zip"... mas não "x.imgbu" (imagem do BU)."""
+    if not isinstance(nome, str): return False
+    base = nome.lower().split("?", 1)[0].rsplit("/", 1)[-1]
+    return re.search(r"(^|[.\-_])bu(sa)?([.\-_]|$)", base) is not None
+
+
+def _nomes_de_arquivo(value, out=None):
+    """Lista todos os textos com cara de nome de arquivo dentro do aux.json (para diagnóstico)."""
+    out = [] if out is None else out
+    if isinstance(value, str) and re.search(r"\.[a-z0-9]{2,6}$", value.lower()): out.append(value)
+    elif isinstance(value, dict): [_nomes_de_arquivo(v, out) for v in value.values()]
+    elif isinstance(value, list): [_nomes_de_arquivo(v, out) for v in value]
+    return out
 
 
 def _find_bu(value):
@@ -88,12 +101,35 @@ def bu_relativo(aux):
     return _find_bu(aux)
 
 
+def _hashes_preferidos(aux):
+    hashes = aux.get("hashes") if isinstance(aux, dict) else None
+    if not isinstance(hashes, list): return []
+    totalizados = [h for h in hashes if isinstance(h, dict) and str(h.get("st", "")).lower().startswith("totalizad")]
+    return [h.get("hash") for h in reversed(totalizados or hashes) if isinstance(h, dict) and h.get("hash")]
+
+
+def caminhos_candidatos(aux, cod_municipio, zona, secao, cod_pleito=COD_PLEITO_2026):
+    """Caminhos possíveis do BU, do mais provável ao menos provável."""
+    caminhos = []
+    ref = bu_relativo(aux)
+    if ref: caminhos.append(ref)
+    # Nome padrão do TSE quando o aux.json não lista o arquivo: o{pleito 5 díg.}-{mun}{zona}{seção}.bu
+    padrao = f"o{str(int(cod_pleito)).zfill(5)}-{str(cod_municipio).zfill(5)}{str(zona).zfill(4)}{str(secao).zfill(4)}.bu"
+    caminhos += [f"{h}/{padrao}" for h in _hashes_preferidos(aux)] + [padrao]
+    return list(dict.fromkeys(caminhos))
+
+
 def get_bu_file(uf, cod_municipio, zona, secao, dest_folder="/tmp/urna-facil-bus"):
     aux, aux_url = get_urna_aux(uf, cod_municipio, zona, secao)
-    ref = bu_relativo(aux)
-    if not ref: raise RuntimeError("O aux.json não informou um arquivo de BU (a seção pode ainda não ter sido totalizada)")
-    url = ref if ref.startswith("http") else f"{aux_url.rsplit('/', 1)[0]}/{ref}"
-    r = _get(url, 60)
+    pasta = aux_url.rsplit('/', 1)[0]
+    urls = [c if c.startswith("http") else f"{pasta}/{c}" for c in caminhos_candidatos(aux, cod_municipio, zona, secao)]
+    try:
+        r, url = _get_primeira(urls, 60)
+    except RuntimeError:
+        status = aux.get("st") if isinstance(aux, dict) else None
+        arquivos = ", ".join(_nomes_de_arquivo(aux)) or "nenhum"
+        raise RuntimeError(f"BU não encontrado. Situação no TSE: {status or 'não informada'}. "
+                           f"Arquivos listados no aux.json: {arquivos}")
     Path(dest_folder).mkdir(parents=True, exist_ok=True)
     path = Path(dest_folder) / url.rsplit('/', 1)[-1].split('?', 1)[0]
     path.write_bytes(r.content)
