@@ -140,3 +140,9 @@ def test_sem_candidato_lista_todos(api):
     assert cands[0]["por_secao"] == {"0001": 48, "0002": 48}
     assert d["total"] == sum(c["total"] for c in cands) == 2 * 161
     assert [c["total"] for c in cands] == sorted((c["total"] for c in cands), reverse=True)
+
+
+def test_formato_2026_confirmado_tenta_pasta_do_hash_primeiro():
+    aux = {"hashes": [{"hash": "6f78", "st": "Totalizado", "nmarq": ["o03220go9625300490095-bu.dat"]}]}
+    caminhos = tse_client.caminhos_candidatos(aux, "go", "96253", "49", "95")
+    assert caminhos[0] == "6f78/o03220go9625300490095-bu.dat"

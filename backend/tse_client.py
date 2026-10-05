@@ -123,9 +123,8 @@ def _nomes_bu(aux):
 def caminhos_candidatos(aux, uf, cod_municipio, zona, secao, cod_pleito=COD_PLEITO_2026):
     """Caminhos possíveis do BU, do mais provável ao menos provável.
 
-    2026: o arquivo se chama "o03220go9625300490002-bu.dat" e fica na pasta da seção.
-    Anos anteriores: "o00406-9625300490002.bu" dentro de uma subpasta com o hash da urna.
-    Tentamos os dois jeitos, com e sem a subpasta do hash.
+    2026 (confirmado): ".../0049/0095/<hash>/o03220go9625300490095-bu.dat", ou seja,
+    o BU fica numa subpasta com o hash da urna. Sem hash fica só como reserva.
     """
     m, z, s = str(cod_municipio).zfill(5), str(zona).zfill(4), str(secao).zfill(4)
     p5 = str(int(cod_pleito)).zfill(5)
@@ -133,8 +132,8 @@ def caminhos_candidatos(aux, uf, cod_municipio, zona, secao, cod_pleito=COD_PLEI
     caminhos = []
     for nome in dict.fromkeys(nomes):
         if nome.startswith("http") or "/" in nome: caminhos.append(nome); continue
-        caminhos.append(nome)
         caminhos += [f"{h}/{nome}" for h in _hashes_preferidos(aux)]
+        caminhos.append(nome)
     return list(dict.fromkeys(caminhos))
 
 
