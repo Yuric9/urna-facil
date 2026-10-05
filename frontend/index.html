@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UrnaFácil — Consulta de votos</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f4f7fb;color:#142033}
+.header{background:#0b3b2e;color:#fff}.wrap{width:min(1180px,calc(100% - 32px));margin:auto}.header .wrap{padding:24px 0;display:flex;justify-content:space-between;align-items:center;gap:20px}.brand{display:flex;align-items:center;gap:12px}.logo{width:42px;height:42px;border-radius:12px;background:#fff;color:#0b3b2e;display:grid;place-items:center;font-weight:900;font-size:20px}.brand h1{margin:0;font-size:22px}.brand p{margin:2px 0 0;color:#cce6dc;font-size:12px}.badge{font-size:12px;border:1px solid #4f7c6e;padding:8px 11px;border-radius:999px;color:#dff4ec}
+main{padding:28px 0 48px}.grid{display:grid;grid-template-columns:1.15fr .85fr;gap:18px}.card{background:#fff;border:1px solid #dfe7ef;border-radius:18px;box-shadow:0 8px 28px rgba(15,23,42,.05);padding:22px}.title{margin:0;font-size:18px}.muted{color:#66758a;font-size:13px;line-height:1.55}.fields{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}.field.wide{grid-column:span 2}.field label{display:block;font-size:12px;font-weight:800;margin-bottom:6px;color:#334155}.field input,.field select{width:100%;height:42px;border:1px solid #cbd6e2;border-radius:10px;padding:0 11px;background:#fff;color:#172033;outline:none}.field input:focus,.field select:focus{border-color:#0b8062;box-shadow:0 0 0 3px rgba(11,128,98,.1)}
+.actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px}.btn{border:0;border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer}.primary{background:#0b8062;color:#fff}.secondary{background:#eaf1f6;color:#294052}.danger{background:#fff0f0;color:#a33b3b}.status{margin-top:13px;font-size:12px;color:#607086;min-height:18px}.sections{margin-top:18px}.section-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.section-list{margin-top:8px;display:grid;grid-template-columns:repeat(5,1fr);gap:7px;max-height:240px;overflow:auto;padding:10px;border:1px solid #dfe7ef;border-radius:12px;background:#f8fafc}.check{display:flex;align-items:center;gap:6px;padding:8px;border:1px solid #e0e7ee;border-radius:9px;background:#fff;font-size:12px;cursor:pointer}.check input{accent-color:#0b8062}
+.result-empty{padding:28px 12px;text-align:center;color:#718096;font-size:13px}.result-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}.metric{padding:14px;border:1px solid #e0e7ef;border-radius:12px;background:#f8fafc}.metric small{display:block;color:#738196;font-size:11px}.metric strong{display:block;margin-top:4px;font-size:21px}.table-wrap{margin-top:14px;overflow:auto;border:1px solid #e0e7ef;border-radius:12px}.table{width:100%;border-collapse:collapse;font-size:12px}.table th,.table td{padding:10px;text-align:left;border-bottom:1px solid #e8edf2}.table th{background:#f8fafc;color:#526176;font-size:11px;text-transform:uppercase}.table tr:last-child td{border-bottom:0}.ok{color:#087853;font-weight:800}.err{color:#a33b3b;font-weight:700}.source{font-size:11px;color:#69788b}.foot{margin-top:20px;color:#718096;font-size:11px;text-align:center}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.fields{grid-template-columns:1fr 1fr}.section-list{grid-template-columns:repeat(4,1fr)}}@media(max-width:560px){.wrap{width:min(100% - 20px,1180px)}.header .wrap{align-items:flex-start}.badge{display:none}.fields{grid-template-columns:1fr}.field.wide{grid-column:auto}.section-list{grid-template-columns:repeat(3,1fr)}.result-summary{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="header"><div class="wrap"><div class="brand"><div class="logo">U</div><div><h1>UrnaFácil</h1><p>Consulta e conferência de votos por Boletim de Urna</p></div></div><div class="badge" id="apiBadge">API não testada</div></div></header>
+<main><div class="wrap">
+<div class="grid">
+<section class="card">
+<h2 class="title">Consulta de votos</h2>
+<p class="muted">Escolha a eleição, carregue as seções da zona e selecione uma ou várias. A consulta soma os votos registrados nos BUs processados pelo UrnaFácil.</p>
+<div class="fields">
+<div class="field"><label>UF</label><input id="uf" value="GO" maxlength="2"></div>
+<div class="field"><label>Município — código TSE</label><input id="municipio" value="96253"></div>
+<div class="field"><label>Zona</label><input id="zona" value="0049"></div>
+<div class="field"><label>Cargo</label><select id="cargo"><option value="1">Presidente</option><option value="3">Governador</option><option value="5">Senador</option><option value="6" selected>Deputado Federal</option><option value="7">Deputado Estadual</option></select></div>
+<div class="field wide"><label>Backend da API</label><input id="api" value="http://127.0.0.1:8765"></div>
+<div class="field wide"><label>Número do candidato</label><input id="candidato" placeholder="Ex.: 1001"></div>
+</div>
+<div class="actions"><button class="btn primary" id="load">Carregar seções</button><button class="btn secondary" id="all">Selecionar todas</button><button class="btn secondary" id="none">Limpar seleção</button><button class="btn primary" id="search">Pesquisar votos</button></div>
+<div class="status" id="status">Pronto para iniciar.</div>
+<div class="sections"><div class="section-head"><strong>Seções disponíveis</strong><span class="muted" id="count">0 selecionadas</span></div><div class="section-list" id="sections"><div class="result-empty">Clique em “Carregar seções”.</div></div></div>
+</section>
+<section class="card">
+<h2 class="title">Resultado</h2><p class="muted">O resultado abaixo é calculado por seção e depois totalizado.</p>
+<div id="result"><div class="result-empty">Nenhuma consulta realizada.</div></div>
+</section>
+</div>
+<div class="foot">UrnaFácil • fonte de dados: TSE • ferramenta independente, não afiliada ao TSE.</div>
+</div></main>
+<script>
+const $=id=>document.getElementById(id); const api=()=>($('api').value||'').replace(/\/$/,'');
+function selected(){return [...document.querySelectorAll('#sections input:checked')].map(x=>x.value)}
+function updateCount(){$('count').textContent=selected().length+' selecionada(s)'}
+function setStatus(t,err=false){$('status').textContent=t;$('status').style.color=err?'#a33b3b':'#607086'}
+async function loadSections(){
+ setStatus('Consultando a configuração oficial do TSE...');$('sections').innerHTML='<div class="result-empty">Carregando...</div>';
+ try{const u=`${api()}/secoes/${encodeURIComponent($('uf').value.toLowerCase())}/${encodeURIComponent($('municipio').value)}/${encodeURIComponent($('zona').value)}?cargo=${$('cargo').value}`;const r=await fetch(u);const d=await r.json();if(!r.ok)throw Error(d.detail||'Falha');
+ $('sections').innerHTML=d.secoes.length?d.secoes.map(s=>`<label class="check"><input type="checkbox" value="${s}"><span>${s}</span></label>`).join(''):'<div class="result-empty">Nenhuma seção encontrada.</div>';
+ document.querySelectorAll('#sections input').forEach(x=>x.addEventListener('change',updateCount));updateCount();setStatus(`${d.quantidade} seção(ões) encontradas.`);$('apiBadge').textContent='API conectada';$('apiBadge').style.borderColor='#67a88f';
+ }catch(e){$('sections').innerHTML='<div class="result-empty">Não foi possível carregar as seções. Verifique se a API está ligada.</div>';setStatus('Erro: '+e.message,true);$('apiBadge').textContent='API indisponível';}}
+$('all').onclick=()=>{document.querySelectorAll('#sections input').forEach(x=>x.checked=true);updateCount()};$('none').onclick=()=>{document.querySelectorAll('#sections input').forEach(x=>x.checked=false);updateCount()};$('load').onclick=loadSections;
+$('cargo').onchange=()=>{if(document.querySelectorAll('#sections input').length)loadSections()};
+$('search').onclick=async()=>{const secs=selected();const cand=$('candidato').value.trim();if(!secs.length)return setStatus('Selecione pelo menos uma seção.',true);if(!cand)return setStatus('Informe o número do candidato.',true);
+ setStatus('Consultando votos...');$('result').innerHTML='<div class="result-empty">Processando as seções selecionadas...</div>';
+ try{const p=new URLSearchParams({uf:$('uf').value.toLowerCase(),municipio:$('municipio').value,zona:$('zona').value,secoes:secs.join(','),cargo:$('cargo').value,candidato:cand});const r=await fetch(`${api()}/pesquisa-multiplas?${p}`);const d=await r.json();if(!r.ok)throw Error(d.detail||'Falha na consulta');
+ const erros=d.secoes.filter(x=>x.erro).length;const rows=d.secoes.map(x=>`<tr><td>${x.secao}</td><td><strong>${x.votos}</strong></td><td>${x.erro?`<span class="err">${x.erro}</span>`:`<span class="ok">${x.cache?'Cache local':'BU processado'}</span><br><span class="source">${x.fonte||'TSE'}</span>`}</td></tr>`).join('');
+ $('result').innerHTML=`<div class="result-summary"><div class="metric"><small>TOTAL DE VOTOS</small><strong>${d.total}</strong></div><div class="metric"><small>SEÇÕES CONSULTADAS</small><strong>${d.secoes.length}</strong></div><div class="metric"><small>COM ERRO</small><strong>${erros}</strong></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Seção</th><th>Votos</th><th>Origem</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+ setStatus(`Consulta concluída. Total: ${d.total} voto(s).`);
+ }catch(e){$('result').innerHTML='<div class="result-empty err">Não foi possível concluir a consulta.</div>';setStatus('Erro: '+e.message,true)}};
+(async()=>{try{const r=await fetch(api()+'/');const d=await r.json();if(r.ok&&d.mock===false){$('apiBadge').textContent='API conectada'}}catch{}})();
+</script>
+</body></html>
