@@ -6,12 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from bu_parser import votos_todos_cargos
 from cache import get_section, get_fonte, save_eleicao, cache_count
+import dados_abertos
 from candidatos import nomes_candidatos
 from tse_client import get_config_uf, get_urna_aux, get_bu_file, SecaoSemBU
 
 app = FastAPI(title="UrnaFácil API - TSE", version="2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+ANO_ATUAL = 2026  # eleição lida ao vivo dos Boletins de Urna; anos anteriores vêm dos Dados Abertos
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
 FIXTURE = Path(__file__).resolve().parent / "tests" / "fixtures" / "boletim_trindade_0049_0001.dat"
 
@@ -146,14 +148,21 @@ def votos(uf:str=Query("go"),municipio:str=Query("96253"),zona:str=Query("0049")
     return {"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"secao":str(secao).zfill(4),"cargo":cargo,"votos":rows,"total":total,"cache":from_cache,"fonte":source,"mock":False}
 
 @app.get("/pesquisa-multiplas")
-def pesquisa_multiplas(uf:str="go",municipio:str="96253",zona:str="0049",secoes:str=Query(...,description="001,002,003"),cargo:int=6,candidato:Optional[str]=Query(None,description="Número do candidato; vazio = todos"),force:bool=False):
+def pesquisa_multiplas(uf:str="go",municipio:str="96253",zona:str="0049",secoes:str=Query(...,description="001,002,003"),cargo:int=6,candidato:Optional[str]=Query(None,description="Número do candidato; vazio = todos"),force:bool=False,ano:int=ANO_ATUAL,turno:int=1):
     cand=(candidato or "").strip()
-    lista=[]; por_candidato={}
+    historico=ano!=ANO_ATUAL
+    if historico and not dados_abertos.ja_importado(ano,uf,municipio):
+        raise HTTPException(409,f"Os dados de {ano} de {uf.upper()}/{str(municipio).zfill(5)} ainda não foram importados.")
+    lista=[]; por_candidato={}; nomes_historico={}
     for s in secoes.split(','):
         s=s.strip()
         if not s: continue
         try:
-            rows,from_cache,source=carregar_secao(uf,municipio,zona,s,cargo,force)
+            if historico:
+                rows=dados_abertos.votos_secao(ano,turno,uf,municipio,zona,s,cargo); from_cache=True; source=f"Dados Abertos TSE {ano}"
+                nomes_historico.update({r["numero"]:{"nome":r["nome"],"partido":None} for r in rows if r.get("nome")})
+            else:
+                rows,from_cache,source=carregar_secao(uf,municipio,zona,s,cargo,force)
         except SecaoSemBU as e:
             lista.append({"secao":str(s).zfill(4),"votos":0,"aviso":str(e)}); continue
         except Exception as e:
@@ -165,10 +174,13 @@ def pesquisa_multiplas(uf:str="go",municipio:str="96253",zona:str="0049",secoes:
         votos=por_candidato.get(cand,{}).get("por_secao",{}).get(sec,0) if cand else sum(r["votos"] for r in rows)
         lista.append({"secao":sec,"votos":votos,"cache":from_cache,"fonte":source})
     total=sum(x.get("votos",0) for x in lista if "erro" not in x)
-    resp={"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"cargo":cargo,"candidato":cand or None,"secoes":lista,"total":total,"cache_registros":cache_count(),"mock":False}
-    # Nomes vêm de outro arquivo do TSE; se ele falhar, a pesquisa segue só com os números.
-    try: nomes,_=nomes_candidatos(uf,municipio,cargo)
-    except Exception as e: nomes={}; resp["aviso_nomes"]=str(e)
+    resp={"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"cargo":cargo,"ano":ano,"turno":turno,"candidato":cand or None,"secoes":lista,"total":total,"cache_registros":cache_count(),"mock":False}
+    if historico:
+        nomes=nomes_historico  # o CSV dos Dados Abertos já traz o nome de cada candidato
+    else:
+        # Nomes vêm de outro arquivo do TSE; se ele falhar, a pesquisa segue só com os números.
+        try: nomes,_=nomes_candidatos(uf,municipio,cargo)
+        except Exception as e: nomes={}; resp["aviso_nomes"]=str(e)
     if cand:
         resp["nome"]=nomes.get(cand,{}).get("nome"); resp["sigla"]=nomes.get(cand,{}).get("partido")
     else:
@@ -184,6 +196,29 @@ def lista_candidatos(uf:str, municipio:str, cargo:int=6, force:bool=False):
     try: nomes,fonte=nomes_candidatos(uf,municipio,cargo,force)
     except Exception as e: raise HTTPException(502,str(e))
     return {"uf":uf.upper(),"municipio":str(municipio).zfill(5),"cargo":cargo,"quantidade":len(nomes),"fonte":fonte or "cache","candidatos":nomes}
+
+@app.get("/anos")
+def anos():
+    """Eleições disponíveis: a atual vem dos BUs ao vivo; as anteriores, dos Dados Abertos."""
+    atual={"ano":ANO_ATUAL,"fonte":"bu","turnos":[1],"cargos":{1:"Presidente",3:"Governador",5:"Senador",6:"Deputado Federal",7:"Deputado Estadual"}}
+    return {"anos":[atual]+[{"ano":a,"fonte":"dados_abertos","turnos":[1,2],"cargos":c} for a,c in dados_abertos.ANOS.items()]}
+
+@app.post("/historico/importar")
+def historico_importar(ano:int, uf:str, municipio:str):
+    if ano not in dados_abertos.ANOS: raise HTTPException(400,f"Ano não suportado: {ano}")
+    dados_abertos.iniciar_importacao(ano,uf,municipio)
+    return dados_abertos.status(ano,uf,municipio)
+
+@app.get("/historico/status")
+def historico_status(ano:int, uf:str, municipio:str):
+    return dados_abertos.status(ano,uf,municipio)
+
+@app.get("/historico/secoes/{uf}/{municipio}/{zona}")
+def historico_secoes(uf:str, municipio:str, zona:str, ano:int, turno:int=1, cargo:int=13):
+    if not dados_abertos.ja_importado(ano,uf,municipio):
+        raise HTTPException(409,f"Os dados de {ano} de {uf.upper()}/{str(municipio).zfill(5)} ainda não foram importados.")
+    secoes=dados_abertos.secoes(ano,turno,uf,municipio,zona,cargo)
+    return {"uf":uf.upper(),"municipio":str(municipio).zfill(5),"zona":str(zona).zfill(4),"ano":ano,"turno":turno,"secoes":secoes,"quantidade":len(secoes),"agregadas":{},"fonte":f"Dados Abertos TSE {ano}"}
 
 @app.get("/cache")
 def cache(): return {"registros":cache_count(),"armazenamento":"SQLite","mock":False}

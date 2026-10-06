@@ -9,6 +9,15 @@ Dê **dois cliques** em `Iniciar UrnaFacil.bat`. O navegador abre sozinho em htt
 - Para encerrar, feche a janela preta do UrnaFácil.
 - Dica: clique com o botão direito no `.bat` → *Enviar para* → *Área de trabalho (criar atalho)*.
 
+## Eleições anteriores (Dados Abertos)
+
+Escolha o **Ano da eleição** na tela (2024, 2022, 2020 ou 2018) e o **Turno**. Os cargos mudam conforme o ano (Prefeito/Vereador em anos municipais).
+
+- Na primeira consulta de um ano e município, o sistema baixa do TSE o arquivo `votacao_secao_{ANO}_{UF}.zip` (Dados Abertos) e importa só o município escolhido para o SQLite. Uma barra mostra o progresso.
+- O ZIP fica guardado em `backend/data_cache/downloads/`, então outro município do mesmo estado e ano não baixa de novo.
+- O arquivo já traz o nome dos candidatos. Brancos, nulos e votos de legenda ficam fora do ranking, como nos BUs.
+- 2026 continua vindo ao vivo dos Boletins de Urna.
+
 ## Fluxo
 1. Primeira consulta: obtém o BU oficial da seção no TSE e decodifica o formato ASN.1/BER v2.
 2. Salva os votos por candidato no cache SQLite.
